@@ -34,8 +34,10 @@ TEST(alloc, vector_capacity) {
 	struct vec v = {0};
 	append(&v, 1);
 	append(&v, 2);
-	int* data = v.data;
 	append(&v, 3);
+	int* data = v.data;
+	append(&v, 4);
+	TRACE("%p %p", data, v.data);
 	ASSERT(data == v.data);
 	rmvector(&v);
 	for (int i = 0; i < 200; i++) {
@@ -89,10 +91,12 @@ static struct arena_pool_info get_pool_id(size_t size) {
 	void* p = alloc(&a, size);
 	for (int i = 0; i < sizeof(a._pool) / sizeof(a._pool[0]); i++) {
 		if (a._pool[i].data) {
-			return (struct arena_pool_info){
+			struct arena_pool_info res = {
 				.id = i,
 				.item_size = a._pool[i].len ? p - a._pool[i].data[a._pool[i].len - 1] : 512,
 			};
+			rmarena(&a);
+			return res;
 		}
 	}
 	rmarena(&a);
@@ -124,4 +128,17 @@ TEST(alloc, arena_pool_id) {
 		ASSERT(get_pool_id(size).id == 5);
 		ASSERT(get_pool_id(size).item_size == 512);
 	}
+}
+
+TEST(alloc, arena_vector) {
+	struct arena a = {0};
+	struct vec* v = vector(&a);
+	TRACE("TR %d %d", v->data, v->len);
+	append(v, 4);
+	append(v, 5);
+	append(v, 6);
+	append(v, 7);
+	append(v, 8);
+	append(v, 9);
+	rmarena(&a);
 }

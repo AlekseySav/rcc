@@ -4,7 +4,7 @@
 #define MAX_TEST_LOGS 10000
 
 struct _test_results {
-	bool fail;
+	bool fail, leak;
 	const char* expr;
 	const char* file;
 	int line;
@@ -63,7 +63,7 @@ static bool specified_test(const char* suite, const char* name, int argc, char**
 		return true;
 	}
 	for (int i = 1; i < argc; i++) {
-		sprintf(buf, "%s.%s", suite, name);
+		snprintf(buf, 512, "%s.%s", suite, name);
 		if (!strcmp(buf, argv[i])) {
 			return true;
 		}
@@ -75,10 +75,22 @@ static void run_test(const char* suite, const char* name, void (*test)(struct _t
 	struct _test_results r = {0};
 	suite_total++;
 	test(&r);
-	if (!r.fail) {
+#ifdef TRACK_ALLOCATIONS
+	extern bool detect_memory_leaks();
+	if (detect_memory_leaks()) {
+		r.leak = true;
+	}
+#endif
+	if (!r.fail && !r.leak) {
 		return;
 	}
-	print("\n\e[1m%s.%s: \e[31mfailed:\e[0m '%s' is false at %s:%d", suite, name, r.expr, r.file, r.line);
+
+	if (r.fail) {
+		print("\n\e[1m%s.%s: \e[31mfailed:\e[0m '%s' is false at %s:%d", suite, name, r.expr, r.file, r.line);
+	}
+	if (r.leak) {
+		print("\n\e[1m%s.%s: \e[31mdetected memory leak\e[0m", suite, name);
+	}
 	suite_errors++;
 	if (r.logs[0]) {
 		print("\ncaptured logs:\n%s", r.logs);
@@ -89,7 +101,7 @@ void _test_trace(struct _test_results* tr, const char* fmt, ...) {
 	va_list ap;
 	va_start(ap, fmt);
 	strcat(tr->logs, " >>> ");
-	vsprintf(tr->logs + strlen(tr->logs), fmt, ap);
+	vsnprintf(tr->logs + strlen(tr->logs), MAX_TEST_LOGS - strlen(tr->logs), fmt, ap);
 	strcat(tr->logs, "\n");
 	va_end(ap);
 }

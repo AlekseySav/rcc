@@ -24,30 +24,46 @@ struct _arena_vector {
 	size_t len;
 };
 
+struct _arena_vector_list {
+	struct _arena_vector** data;
+	size_t len;
+};
+
 typedef struct arena {
 	struct _arena_vector _pool[6];
 	struct _arena_vector _freelist;
+	struct _arena_vector_list _vectors;
 } *arena;
 
 void* alloc(arena a, size_t size);
 void dealloc(arena a, void* p, size_t size);
 void rmarena(arena a);
 
+void* vector(arena a);
 void* _extend_vector(void* begin, size_t size, size_t item);
 void _rmvector(void* v);
 
 #define append(v, a) ({ \
-	(v)->data = _extend_vector((v)->data, (v)->len, sizeof(*(v)->data)); \
-	(v)->data[(v)->len++] = (a); \
+	typeof(v) _v = (v); \
+	_v->data = _extend_vector(_v->data, _v->len + 1, sizeof(typeof(*(_v->data)))); \
+	_v->data[_v->len++] = (a); \
+})
+
+#define emplace(v) ({ \
+	typeof(v) _v = (v); \
+	_v->data = _extend_vector(_v->data, _v->len + 1, sizeof(typeof(*(_v->data)))); \
+	&_v->data[_v->len++]; \
 })
 
 #define pop(v) ({ \
-	assert((v)->len); \
-	(v)->data[--(v)->len]; \
+	typeof(v) _v = (v); \
+	assert(_v->len); \
+	_v->data[--_v->len]; \
 })
 
 #define rmvector(v) ({ \
-	assert((void*)&((typeof(v))NULL)->data == (void*)&((struct _arena_vector*)NULL)->data); \
-	assert((void*)&((typeof(v))NULL)->len == (void*)&((struct _arena_vector*)NULL)->len); \
-	_rmvector(v); \
+	typeof(v) _v = (v); \
+	assert((void*)&((typeof(_v))NULL)->data == (void*)&((struct _arena_vector*)NULL)->data); \
+	assert((void*)&((typeof(_v))NULL)->len == (void*)&((struct _arena_vector*)NULL)->len); \
+	_rmvector(_v); \
 })

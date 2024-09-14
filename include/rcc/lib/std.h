@@ -13,6 +13,3 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 
 typedef u32 string;
-
-#define interface(a, interface, impl) alloc(a, sizeof(*interface) + sizeof(impl))
-#define implementation(interface) ((void*)(&interface[1]))
