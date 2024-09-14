@@ -1,0 +1,6 @@
+CompileFlags:
+  Add:
+    - "--std=c2x"
+    - "-xc"
+    - "-I/Users/schetvkomplax/src/rcc/include"
+  Compiler: clang
