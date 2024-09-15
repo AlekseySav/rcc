@@ -45,6 +45,7 @@ TEST(symtab, symtab_basic) {
 	struct arena a = {0};
 	init_strtab(&a);
 	init_symtab(&a);
+	open_scope();
 	struct symbol* id = lookup(str("hello"));
 	struct symbol* i2 = lookup(str("hello"));
 	ASSERT(id == i2);
@@ -57,6 +58,7 @@ TEST(symtab, symtab_basic) {
 
 	init_strtab(&a);
 	init_symtab(&a);
+	open_scope();
 	struct symbol* save[512];
 	for (int i = 0; i < 512; i++) {
 		save[i] = lookup(str(gen(i)));
@@ -76,6 +78,7 @@ TEST(symtab, scopes) {
 	struct arena a = {0};
 	init_strtab(&a);
 	init_symtab(&a);
+	open_scope();
 
 	struct symbol* global = lookup(str("s"));
 	ASSERT(global);
@@ -95,5 +98,17 @@ TEST(symtab, scopes) {
 	ASSERT(lookup_local(str("s")) == global);
 	open_scope();
 	ASSERT(lookup(str("s")) == global);
+
+	open_scope();
+	for (int i = 0; i < 512; i++) {
+		lookup(str(gen(i)));
+		ASSERT(lookup(str("s")) == global);
+	}
+	close_scope();
+	for (int i = 0; i < 512; i++) {
+		lookup(str(gen(i)));
+		ASSERT(lookup(str("s")) == global);
+	}
+
 	rmarena(&a);
 }

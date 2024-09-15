@@ -45,27 +45,21 @@ static void _insert_symbol(struct ext_sym** bucket, string name, u32 scope) {
 }
 
 static void _rehash(void) {
-	struct sym_buckets old_buckets = {symtab.buckets->data, symtab.buckets->len};
-	symtab.buckets->data = NULL;
+	struct ext_sym** bucket;
 	symtab.buckets->len = (symtab.buckets->len ? (symtab.buckets->len - 1) * 2 : 16) + 1,
 	symtab.buckets->data = extend_vector(symtab.buckets->data, symtab.buckets->len, sizeof(struct ext_sym*), true);
 	memset(symtab.buckets->data, 0, symtab.buckets->len * sizeof(struct ext_sym*));
-	for (struct ext_sym** bucket = old_buckets.data; bucket < old_buckets.data + old_buckets.len; bucket++) {
-		struct ext_sym** new_bucket;
-		if (!*bucket) {
-			continue;
-		}
-		assert(new_bucket = _get_bucket((*bucket)->s.name, (*bucket)->scope_id));
-		*new_bucket = *bucket;
-		assert((*bucket)->s.name);
+	for (struct ext_sym* s = symtab.last; s; s = s->prev) {
+		assert(bucket = _get_bucket(s->s.name, s->scope_id));
+		*bucket = s;
 	}
-	rmvector(&old_buckets);
 }
 
 void init_symtab(arena a) {
 	symtab.a = a;
 	symtab.buckets = vector(a);
-	symtab.scope = 1;
+	symtab.scope = 0;
+	symtab.last = NULL;
 }
 
 void open_scope(void) {
@@ -74,10 +68,14 @@ void open_scope(void) {
 
 void close_scope(void) {
 	assert(symtab.scope);
-	for (struct ext_sym* s = symtab.last; s->scope_id == symtab.scope; s = s->prev) {
+	struct ext_sym* s;
+	for (s = symtab.last; s && s->scope_id == symtab.scope; s = s->prev) {
+		assert(s->scope_id);
 		symtab.buckets->data[s->hsh_link] = NULL;
+		s->scope_id = 0;
 	}
 	symtab.scope--;
+	symtab.last = s;
 }
 
 struct symbol* lookup(string name) {
