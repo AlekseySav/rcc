@@ -88,7 +88,7 @@ static void run_test(const char* suite, const char* name, void (*test)(struct _t
 	if (r.fail) {
 		print("\n\e[1m%s.%s: \e[31mfailed:\e[0m '%s' is false at %s:%d", suite, name, r.expr, r.file, r.line);
 	}
-	if (r.leak) {
+	else if (r.leak) {
 		print("\n\e[1m%s.%s: \e[31mdetected memory leak\e[0m", suite, name);
 	}
 	suite_errors++;
