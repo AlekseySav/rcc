@@ -13,7 +13,7 @@ static void** _findmem(void* addr) {
 	return NULL;
 }
 
-bool detect_memory_leaks() {
+bool detect_memory_leaks(void) {
 	for (void** p = _addrs; p < _addrs + MAX_ALLOCATIONS; p++) {
 		if(*p) return true;
 	}
@@ -39,7 +39,7 @@ static inline void _free(void* addr) {
 	free(addr);
 }
 
-static inline size_t _pool_id(size_t size) { // = [log_2(size * 2 - 1)] - 4
+static inline size_t _pool_id(size_t size) {
 	assert(size && size <= 512);
 	size = (size - 1) >> 4;
 	return size < 2 ? size : size < 8 ? (size >> 2) + 2 : (size >> 4) + 4;
@@ -84,15 +84,15 @@ void* vector(arena a) {
 	return v;
 }
 
-void* _extend_vector(void* begin, size_t size, size_t item) {
+void* extend_vector(void* begin, size_t size, size_t item, bool force_realloc) {
 	size--;
-	if (size & size - 1) {
+	if (!force_realloc && size & size - 1) {
 		return begin;
 	}
 	return _alloc(begin, size ? (size << 1) * item : item);
 }
 
-void _rmvector(void* v) {
+void rmvector(void* v) {
 	struct _arena_vector* vec = v;
 	if (vec->data) {
 		_free(vec->data);

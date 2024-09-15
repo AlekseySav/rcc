@@ -76,7 +76,7 @@ static void run_test(const char* suite, const char* name, void (*test)(struct _t
 	suite_total++;
 	test(&r);
 #ifdef TRACK_ALLOCATIONS
-	extern bool detect_memory_leaks();
+	extern bool detect_memory_leaks(void);
 	if (detect_memory_leaks()) {
 		r.leak = true;
 	}

@@ -40,30 +40,34 @@ void dealloc(arena a, void* p, size_t size);
 void rmarena(arena a);
 
 void* vector(arena a);
-void* _extend_vector(void* begin, size_t size, size_t item);
-void _rmvector(void* v);
+void* extend_vector(void* begin, size_t size, size_t item, bool force_realloc);
+void rmvector(void* v);
+
+/*
+ * vector helper functions
+ */
+
+#define _get_vector_and_assert_ok(v) ({ \
+	typeof(v) _v = (v); \
+	static_assert((void*)&((typeof(_v))NULL)->data == (void*)&((struct _arena_vector*)NULL)->data); \
+	static_assert((void*)&((typeof(_v))NULL)->len == (void*)&((struct _arena_vector*)NULL)->len); \
+	_v; \
+})
 
 #define append(v, a) ({ \
-	typeof(v) _v = (v); \
-	_v->data = _extend_vector(_v->data, _v->len + 1, sizeof(typeof(*(_v->data)))); \
+	typeof(v) _v = _get_vector_and_assert_ok(v); \
+	_v->data = extend_vector(_v->data, _v->len + 1, sizeof(typeof(*(_v->data))), false); \
 	_v->data[_v->len++] = (a); \
 })
 
 #define emplace(v) ({ \
-	typeof(v) _v = (v); \
-	_v->data = _extend_vector(_v->data, _v->len + 1, sizeof(typeof(*(_v->data)))); \
+	typeof(v) _v = _get_vector_and_assert_ok(v); \
+	_v->data = extend_vector(_v->data, _v->len + 1, sizeof(typeof(*(_v->data))), false); \
 	&_v->data[_v->len++]; \
 })
 
 #define pop(v) ({ \
-	typeof(v) _v = (v); \
+	typeof(v) _v = _get_vector_and_assert_ok(v); \
 	assert(_v->len); \
 	_v->data[--_v->len]; \
-})
-
-#define rmvector(v) ({ \
-	typeof(v) _v = (v); \
-	assert((void*)&((typeof(_v))NULL)->data == (void*)&((struct _arena_vector*)NULL)->data); \
-	assert((void*)&((typeof(_v))NULL)->len == (void*)&((struct _arena_vector*)NULL)->len); \
-	_rmvector(_v); \
 })
