@@ -1,0 +1,10 @@
+[common]
+cc = 'clang'
+cflags = ['--std=c2x', '-Iinclude']
+
+[rcc.ut]
+sources = ['lib/*.c', 'lib/ut/*.c']
+debug = true
+
+[rcc.ut.gen]
+'main_ut.c' = 'tools/gen_main_ut.py {env.root} {output}'

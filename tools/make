@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+# usage: tools/make [-t] [-o<name>] <rule>
+import os
+import sys
+
+import lib.make as make
+import lib.util as util
+
+
+def main(argv):
+	run, out, rule = None, None, None
+	for a in argv[1:]:
+		match a[0:2]:
+			case '-t':
+				run = True
+			case '-o':
+				out = a[2:]
+			case _:
+				assert rule is None
+				rule = a
+	assert rule
+
+	config = make.config(rule)
+	result = config.build()
+	if out:
+		os.symlink(result, out)
+	if run:
+		util.run([result])
+
+
+if __name__ == '__main__':
+	main(sys.argv)
