@@ -1,5 +1,6 @@
 #include <rcc/lib/arena.h>
 #include <rcc/lib/alloc.h>
+#include <rcc/lib/std.h>
 
 #include <stdlib.h>
 
