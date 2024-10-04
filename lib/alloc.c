@@ -1,102 +1,78 @@
-#include <assert.h>
+#include <rcc/lib/std.h>
+
+#include <stddef.h>
 #include <stdlib.h>
-#include <rcc/lib/alloc.h>
+#include <string.h>
 
-#ifdef TRACK_ALLOCATIONS
-#define MAX_ALLOCATIONS 16000
-static void* _addrs[MAX_ALLOCATIONS];
-
-static void** _findmem(void* addr) {
-	for (void** p = _addrs; p < _addrs + MAX_ALLOCATIONS; p++) {
-		if (*p == addr) return p;
-	}
-	return NULL;
-}
-
-bool detect_memory_leaks(void) {
-	for (void** p = _addrs; p < _addrs + MAX_ALLOCATIONS; p++) {
-		if(*p) return true;
-	}
-	return false;
-}
+#ifdef __APPLE__
+#include <malloc/malloc.h>
+#elif __linux__
+#include <malloc.h>
+#define malloc_size malloc_usable_size
+#else
+#error unsupported platform
 #endif
 
-static inline void* _alloc(void* origin, size_t size) {
-	void* r = origin ? realloc(origin, size) : malloc(size);
-	assert(r);
-#ifdef TRACK_ALLOCATIONS
-	assert(_findmem(origin));
-	*_findmem(origin) = r;
-#endif
-	return r;
-}
+static void** _memory_map;
+static size_t _map_len;
 
-static inline void _free(void* addr) {
-#ifdef TRACK_ALLOCATIONS
-	assert(_findmem(addr));
-	*_findmem(addr) = NULL;
-#endif
-	free(addr);
-}
-
-static inline size_t _pool_id(size_t size) {
-	assert(size && size <= 512);
-	size = (size - 1) >> 4;
-	return size < 2 ? size : size < 8 ? (size >> 2) + 2 : (size >> 4) + 4;
-}
-
-void* alloc(arena a, size_t size) {
-	size_t pool = _pool_id(size);
-	size = 16 << pool;
-	if (!a->_pool[pool].len) {
-		void* buf = append(&a->_freelist, _alloc(NULL, 512));
-		for (void* p = buf; p < buf + 512; p += size) {
-			append(&a->_pool[pool], p);
+static void** _lookup(void* p) {
+	for (void** a = _memory_map; a < _memory_map + _map_len; a++) {
+		if (*a == p) {
+			return a;
 		}
 	}
-	return pop(&a->_pool[pool]);
+	assert(p == NULL && "trying to free/reallocate invalid memory");
+	size_t new_len = _map_len ? _map_len * 2 : 16;
+	void** new = calloc(new_len, sizeof(void*));
+	if (_map_len) {
+		memcpy(new, _memory_map, _map_len * sizeof(void*));
+		free(_memory_map);
+	}
+	_memory_map = new;
+	_map_len = new_len;
+	return &_memory_map[_map_len - 1];
 }
 
-void dealloc(arena a, void* p, size_t size) {
-	size_t pool = _pool_id(size);
-	append(&a->_pool[pool], p);
+bool _cleanup(void) {
+	bool res = false;
+	for (void** a = _memory_map; a < _memory_map + _map_len; a++) {
+		if (*a) {
+			free(*a);
+			res = true;
+		}
+	}
+	free(_memory_map);
+	_memory_map = NULL;
+	_map_len = 0;
+	return res;
 }
 
-void rmarena(arena a) {
-	for (struct _arena_vector** v = a->_vectors.data; v < a->_vectors.data + a->_vectors.len; v++) {
-		rmvector(*v);
+void* _alloc(void* old, size_t newsize) {
+	void* p;
+	assert(newsize);
+
+	if (!old) {
+		assert(p = calloc(newsize, 1));
 	}
-	for (struct _arena_vector* v = a->_pool; v < a->_pool + sizeof(a->_pool) / sizeof(a->_pool[0]); v++) {
-		rmvector(v);
+	else {
+		size_t oldsize = malloc_size(old);
+		assert(p = realloc(old, newsize));
+		newsize = malloc_size(p);
+		if (oldsize < newsize) {
+			memset(p + oldsize, 0, newsize - oldsize);
+		}
 	}
-	for (void** p = a->_freelist.data; p < a->_freelist.data + a->_freelist.len; p++) {
-		_free(*p);
-	}
-	rmvector(&a->_freelist);
-	rmvector(&a->_vectors);
+
+#ifdef DEBUG
+	*_lookup(old) = p;
+#endif
+	return p;
 }
 
-void* vector(arena a) {
-	struct _arena_vector* v = alloc(a, sizeof(*v));
-	append(&a->_vectors, v);
-	v->data = NULL;
-	v->len = 0;
-	return v;
-}
-
-void* extend_vector(void* begin, size_t size, size_t item, bool force_realloc) {
-	size--;
-	if (!force_realloc && size & size - 1) {
-		return begin;
-	}
-	return _alloc(begin, size ? (size << 1) * item : item);
-}
-
-void rmvector(void* v) {
-	struct _arena_vector* vec = v;
-	if (vec->data) {
-		_free(vec->data);
-	}
-	vec->data = NULL;
-	vec->len = 0;
+void _free(void* p) {
+#ifdef DEBUG
+	*_lookup(p) = NULL;
+#endif
+	free(p);
 }

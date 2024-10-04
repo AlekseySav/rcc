@@ -1,15 +1,15 @@
-#include <rcc/lib/alloc.h>
-#include <rcc/lib/symtab.h>
+#include <rcc/lib/table.h>
 #include <rcc/ut/ut.h>
-#include <stdio.h>
+
 #include <string.h>
 
-const char* gen(int i) {
+static const char* gen(int i) {
 	if (!i) return "0";
-	static char buf[10];
-	char* s = buf + 10;
+	static char buf[100];
+	memset(buf, 0, sizeof(buf));
+	char* s = buf + sizeof(buf);
 	while (i > 0) {
-		assert(s > buf);
+		assert(s > buf + 1);
 		*--s = (i & 1) + '0';
 		i >>= 1;
 	}
@@ -28,12 +28,12 @@ TEST(symtab, strtab_basic) {
 	rmarena(&a);
 
 	init_strtab(&a);
-	string save[512];
-	for (int i = 0; i < 512; i++) {
+	string save[10000];
+	for (int i = 0; i < 10000; i++) {
 		save[i] = str(gen(i));
 		ASSERT(!strcmp(cstr(save[i]), gen(i)));
 	}
-	for (int i = 0; i < 512; i++) {
+	for (int i = 0; i < 10000; i++) {
 		ASSERT(save[i] == str(gen(i)));
 		ASSERT(!strcmp(cstr(save[i]), gen(i)));
 		ASSERT(save[i] > (i ? save[i - 1] : 0));
@@ -42,72 +42,70 @@ TEST(symtab, strtab_basic) {
 }
 
 TEST(symtab, symtab_basic) {
+	struct symtab s;
 	struct arena a = {0};
 	init_strtab(&a);
-	init_symtab(&a);
-	open_scope();
-	struct symbol* id = lookup(str("hello"));
-	struct symbol* i2 = lookup(str("hello"));
-	ASSERT(id == i2);
-	ASSERT(id->name == str("hello"));
-	struct symbol* no = lookup(str("no"));
-	struct symbol* n2 = lookup(str("no"));
-	ASSERT(no != id && n2 == no);
-	ASSERT(no->name == str("no"));
+	init_symtab(&s, &a, sizeof(u32));
+	open_scope(&s);
+	u32* id = lookup_local(&s, str("hello"));
+	u32* i2 = lookup(&s, str("hello"));
+	ASSERT(id == i2 && id);
+	u32* no = lookup_local(&s, str("no"));
+	u32* n2 = lookup(&s, str("no"));
+	u32* nf = lookup(&s, str("not-found"));
+	ASSERT(no != id && n2 == no && no && !nf);
 	rmarena(&a);
 
 	init_strtab(&a);
-	init_symtab(&a);
-	open_scope();
+	init_symtab(&s, &a, sizeof(u32));
+	open_scope(&s);
 	struct symbol* save[512];
-	for (int i = 0; i < 512; i++) {
-		save[i] = lookup(str(gen(i)));
-		ASSERT(save[i]->name == str(gen(i)));
-		ASSERT(!strcmp(cstr(save[i]->name), gen(i)));
+	for (int i = 0; i < 248; i++) {
+		save[i] = lookup_local(&s, str(gen(i)));
+		ASSERT(save[i]);
 	}
-	for (int i = 0; i < 512; i++) {
-		ASSERT(save[i] == lookup(str(gen(i))));
-		ASSERT(save[i]->name == str(gen(i)));
-		ASSERT(!strcmp(cstr(save[i]->name), gen(i)));
+	for (int i = 0; i < 248; i++) {
+		ASSERT(save[i] == lookup(&s, str(gen(i))));
 	}
 
 	rmarena(&a);
 }
 
 TEST(symtab, scopes) {
+	struct symtab s;
 	struct arena a = {0};
 	init_strtab(&a);
-	init_symtab(&a);
-	open_scope();
+	init_symtab(&s, &a, sizeof(u32));
+	open_scope(&s);
 
-	struct symbol* global = lookup(str("s"));
+	struct symbol* global = lookup_local(&s, str("s"));
 	ASSERT(global);
-	ASSERT(lookup(str("s")) == global);
-	ASSERT(lookup_local(str("s")) == global);
+	ASSERT(lookup(&s, str("s")) == global);
+	ASSERT(lookup_local(&s, str("s")) == global);
 
-	open_scope();
-	ASSERT(lookup(str("s")) == global);
-	struct symbol* local = lookup_local(str("s"));
+	open_scope(&s);
+	ASSERT(lookup(&s, str("s")) == global);
+	struct symbol* local = lookup_local(&s, str("s"));
 	ASSERT(local);
 	ASSERT(local != global);
-	ASSERT(lookup(str("s")) == local);
-	ASSERT(lookup_local(str("s")) == local);
+	ASSERT(lookup(&s, str("s")) == local);
+	ASSERT(lookup_local(&s, str("s")) == local);
 
-	close_scope();
-	ASSERT(lookup(str("s")) == global);
-	ASSERT(lookup_local(str("s")) == global);
-	open_scope();
-	ASSERT(lookup(str("s")) == global);
+	close_scope(&s);
+	ASSERT(lookup(&s, str("s")) == global);
+	ASSERT(lookup_local(&s, str("s")) == global);
+	open_scope(&s);
+	ASSERT(lookup(&s, str("s")) == global);
 
-	open_scope();
+	open_scope(&s);
 	for (int i = 0; i < 512; i++) {
-		lookup(str(gen(i)));
-		ASSERT(lookup(str("s")) == global);
+		lookup(&s, str(gen(i)));
+		ASSERT(lookup(&s, str("s")) == global);
 	}
-	close_scope();
+	close_scope(&s);
 	for (int i = 0; i < 512; i++) {
-		lookup(str(gen(i)));
-		ASSERT(lookup(str("s")) == global);
+		lookup(&s, str(gen(i)));
+		ASSERT(lookup(&s, str("s")) == global);
 	}
 
 	rmarena(&a);

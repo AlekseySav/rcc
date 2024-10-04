@@ -1,112 +1,91 @@
-#include <rcc/lib/alloc.h>
-#include <rcc/lib/symtab.h>
+#include <rcc/lib/arena.h>
+#include <rcc/lib/table.h>
+
+#include <stdio.h>
 #include <string.h>
 
-struct ext_sym {
-	struct symbol s;
-	struct ext_sym* prev;
-	u32 scope_id;
-	u32 hsh_link;
-};
-
-struct sym_buckets {
-	struct ext_sym** data;
-	size_t len;
-};
-
-static struct {
-	arena a;
-	struct sym_buckets* buckets;
-	u32 scope;
-	struct ext_sym* last;
-} symtab;
-
 static u32 _hash(string name, u32 scope) {
-	return ~(name ^ scope);
+	return name ^ scope;
 }
 
-static struct ext_sym** _get_bucket(string name, u32 scope) {
-	for (u32 i = 0; i < (symtab.buckets->len * 2 / 3); i++) {
-		struct ext_sym** s = &symtab.buckets->data[(_hash(name, scope) + i) % symtab.buckets->len];
-		if (!*s || (*s)->s.name == name && (*s)->scope_id == scope) {
-			return s;
+static void _insert(struct symtab* s, struct _hshent* b, string name, u32 scope) {
+	b->symbol = alloc(s->a, s->itemsize);
+	b->prev = s->last;
+	b->name = name;
+	b->scope = scope;
+	s->last = b;
+}
+
+static struct _hshent* _lookup_bucket(struct symtab* s, string name, u32 scope) {
+	for (u32 i = 0; i < s->hsh->len; i++) {
+		struct _hshent* b = s->hsh->data + (_hash(name, scope) + i * i) % s->hsh->len;
+		if (b->name == 0 || (b->name == name && b->scope == scope)) {
+			return b;
 		}
 	}
 	return NULL;
 }
 
-static void _insert_symbol(struct ext_sym** bucket, string name, u32 scope) {
-	*bucket = alloc(symtab.a, sizeof(**bucket));
-	(*bucket)->s.name = name;
-	(*bucket)->prev = symtab.last;
-	(*bucket)->scope_id = scope;
-	(*bucket)->hsh_link = bucket - symtab.buckets->data;
-	symtab.last = *bucket;
-}
-
-static void _rehash(void) {
-	struct ext_sym** bucket;
-	symtab.buckets->len = (symtab.buckets->len ? (symtab.buckets->len - 1) * 2 : 16) + 1,
-	symtab.buckets->data = extend_vector(symtab.buckets->data, symtab.buckets->len, sizeof(struct ext_sym*), true);
-	memset(symtab.buckets->data, 0, symtab.buckets->len * sizeof(struct ext_sym*));
-	for (struct ext_sym* s = symtab.last; s; s = s->prev) {
-		assert(bucket = _get_bucket(s->s.name, s->scope_id));
-		*bucket = s;
+static void _rehash(struct symtab* s, u32 newsize) {
+	struct _hshent_vector old = *s->hsh;
+	*s->hsh = (struct _hshent_vector){0};
+	extend_vector(s->hsh, sizeof(struct _hshent), newsize);
+	struct _hshent* oldlast = s->last;
+	s->last = NULL;
+	for (struct _hshent* e = oldlast; e; e = e->prev) {
+		struct _hshent* b = _lookup_bucket(s, e->name, e->scope);
+		assert(b && !b->name);
+		*b = *e;
+		b->prev = s->last;
+		s->last = b;
 	}
+	rmvector(&old);
 }
 
-void init_symtab(arena a) {
-	symtab.a = a;
-	symtab.buckets = vector(a);
-	symtab.scope = 0;
-	symtab.last = NULL;
+void init_symtab(struct symtab* s, arena a, u32 itemsize) {
+	s->a = a;
+	s->hsh = vector(a);
+	s->last = NULL;
+	s->scope = 0;
+	s->itemsize = itemsize;
 }
 
-void open_scope(void) {
-	symtab.scope++;
+void open_scope(struct symtab* s) {
+	s->scope++;
 }
 
-void close_scope(void) {
-	assert(symtab.scope);
-	struct ext_sym* s;
-	for (s = symtab.last; s && s->scope_id == symtab.scope; s = s->prev) {
-		assert(s->scope_id);
-		symtab.buckets->data[s->hsh_link] = NULL;
-		s->scope_id = 0;
+void close_scope(struct symtab* s) {
+	assert(s->scope);
+	while (s->last && s->last->scope == s->scope) {
+		memset(s->last->symbol, 0, s->itemsize);
+		s->last->name = s->last->scope = 0;
+		s->last = s->last->prev;
 	}
-	symtab.scope--;
-	symtab.last = s;
+	s->scope--;
 }
 
-struct symbol* lookup(string name) {
-	struct ext_sym** top;
-	struct ext_sym** s;
-	for (u32 scope = symtab.scope; scope > 0; scope--) {
-		if ((s = _get_bucket(name, scope)) && *s) {
-			return &(*s)->s;
-		}
-		if (scope == symtab.scope) {
-			top = s;
+void* lookup(struct symtab* s, string name) {
+	assert(s->scope);
+	for (u32 scope = s->scope; scope; scope--) {
+		struct _hshent* b = _lookup_bucket(s, name, scope);
+		if (b && b->name) {
+			return b->symbol;
 		}
 	}
-	if (!top) {
-		_rehash();
-	}
-	assert(top = _get_bucket(name, symtab.scope));
-	_insert_symbol(top, name, symtab.scope);
-	return &(*top)->s;
+	return NULL;
 }
 
-struct symbol* lookup_local(string name) {
-	struct ext_sym** s;
-	if ((s = _get_bucket(name, symtab.scope))) {
-		if (!*s) {
-			_insert_symbol(s, name, symtab.scope);
-		}
-		return &(*s)->s;
+void* lookup_local(struct symtab* s, string name) {
+	assert(s->scope);
+	struct _hshent* b = _lookup_bucket(s, name, s->scope);
+	if (!b) {
+		_rehash(s, s->hsh->len * 2 + 1);
+		b = _lookup_bucket(s, name, s->scope);
+		assert(b);
 	}
-	_rehash();
-	assert(s = _get_bucket(name, symtab.scope));
-	_insert_symbol(s, name, symtab.scope);
-	return &(*s)->s;
+	if (!b->name) {
+		_insert(s, b, name, s->scope);
+	}
+	// fprintf(stderr, "ok\n");
+	return b->symbol;
 }

@@ -1,9 +1,10 @@
-#include <rcc/lib/alloc.h>
+#include <rcc/lib/arena.h>
 #include <rcc/ut/ut.h>
 
 struct vec {
 	int* data;
 	size_t len;
+	size_t cap;
 };
 
 TEST(alloc, vector_basic) {
@@ -37,7 +38,6 @@ TEST(alloc, vector_capacity) {
 	append(&v, 3);
 	int* data = v.data;
 	append(&v, 4);
-	TRACE("%p %p", data, v.data);
 	ASSERT(data == v.data);
 	rmvector(&v);
 	for (int i = 0; i < 200; i++) {
@@ -76,7 +76,6 @@ TEST(alloc, arena_no_extra_allocations) {
 		p[3] = i;
 	}
 	ASSERT(a._freelist.len == 1);
-	TRACE("%p %p", p, a._freelist.data[0]);
 	ASSERT(p == a._freelist.data[0]);
 	rmarena(&a);
 }
@@ -133,7 +132,6 @@ TEST(alloc, arena_pool_id) {
 TEST(alloc, arena_vector) {
 	struct arena a = {0};
 	struct vec* v = vector(&a);
-	TRACE("TR %d %d", v->data, v->len);
 	append(v, 4);
 	append(v, 5);
 	append(v, 6);
